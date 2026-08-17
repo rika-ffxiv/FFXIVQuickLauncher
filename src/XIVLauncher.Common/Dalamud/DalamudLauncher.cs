@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -49,8 +49,6 @@ namespace XIVLauncher.Common.Dalamud
             this.noThirdPlugin = noThirdPlugin;
             this.troubleshootingData = troubleshootingData;
         }
-
-        public const string REMOTE_BASE = ServerAddress.MainAddress + "/Dalamud/Release/VersionInfo?track=";
 
         public DalamudInstallState HoldForUpdate(DirectoryInfo gamePath)
         {
@@ -199,25 +197,12 @@ namespace XIVLauncher.Common.Dalamud
             if (this.updater.RunnerOverride != null)
                 return true;
 
-            var info = DalamudVersionInfo.Load(new FileInfo(Path.Combine(this.updater.Runner.DirectoryName!,
-                "version.json")));
-
-            if (Repository.Ffxiv.GetVer(gamePath) != info.SupportedGameVer)
-                return false;
-
             return true;
         }
 
         public static bool CanRunDalamud(DirectoryInfo gamePath)
         {
-            using var client = new WebClient();
-
-            var versionInfoJson = client.DownloadString(REMOTE_BASE);
-            var remoteVersionInfo = JsonConvert.DeserializeObject<DalamudVersionInfo>(versionInfoJson);
-
-            if (Repository.Ffxiv.GetVer(gamePath) != remoteVersionInfo.SupportedGameVer)
-                return false;
-
+            // 静态分发没有服务器下发的 SupportedGameVer, 游戏版本强校验已移除
             return true;
         }
     }

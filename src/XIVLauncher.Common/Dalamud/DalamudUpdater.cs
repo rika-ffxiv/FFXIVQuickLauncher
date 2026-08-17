@@ -136,10 +136,7 @@ namespace XIVLauncher.Common.Dalamud
             });
         }
 
-        private static string GetBetaTrackName(DalamudSettings settings) =>
-            string.IsNullOrEmpty(settings.DalamudBetaKind) ? "staging" : settings.DalamudBetaKind;
-
-        private async Task<(DalamudVersionInfo release, DalamudVersionInfo? staging)> GetVersionInfo(DalamudSettings settings)
+        private async Task<DalamudVersionInfo> GetVersionInfo()
         {
             using var client = new HttpClient
             {
@@ -152,38 +149,35 @@ namespace XIVLauncher.Common.Dalamud
             };
             client.DefaultRequestHeaders.Add("User-Agent", PlatformHelpers.GetVersion());
 
-            var versionInfoJsonRelease = await client.GetStringAsync(DalamudLauncher.REMOTE_BASE + $"release&bucket={this.RolloutBucket}").ConfigureAwait(false);
+            var version = (await client.GetStringAsync(ServerAddress.SoilDalamudVersionUrl).ConfigureAwait(false)).Trim();
 
-            DalamudVersionInfo versionInfoRelease = JsonConvert.DeserializeObject<DalamudVersionInfo>(versionInfoJsonRelease);
+            if (string.IsNullOrWhiteSpace(version))
+                throw new InvalidDataException($"[DUPDATE] 发行源返回空版本信息: {ServerAddress.SoilDalamudVersionUrl}");
 
-            DalamudVersionInfo? versionInfoStaging = null;
+            Log.Information("[DUPDATE] 获取到发行版本: {Version}", version);
 
-            if (!string.IsNullOrEmpty(settings.DalamudBetaKey))
+            var runtimeVersion = (await client.GetStringAsync(ServerAddress.SoilDalamudRuntimeInfoUrl).ConfigureAwait(false)).Trim();
+
+            Log.Information("[DUPDATE] 获取到远端 Dalamud 运行时版本: {0}", runtimeVersion);
+
+            // 远端 hashes.json 的 MD5, 用于校验本地缓存是否最新
+            var hashesUrl = $"{ServerAddress.SoilDalamudAddress}/{version}/hashes.json";
+            var hashesJson = await client.GetByteArrayAsync(hashesUrl).ConfigureAwait(false);
+
+            using (var md5 = MD5.Create())
+                onlineHash = BitConverter.ToString(md5.ComputeHash(hashesJson)).Replace("-", string.Empty);
+
+            Log.Information("[DUPDATE] 获取到远端 Dalamud 哈希: {0}", onlineHash);
+
+            return new DalamudVersionInfo
             {
-                var versionInfoJsonStaging = await client.GetAsync(DalamudLauncher.REMOTE_BASE + GetBetaTrackName(settings)).ConfigureAwait(false);
-
-                if (versionInfoJsonStaging.StatusCode != HttpStatusCode.BadRequest)
-                    versionInfoStaging = JsonConvert.DeserializeObject<DalamudVersionInfo>(await versionInfoJsonStaging.Content.ReadAsStringAsync().ConfigureAwait(false));
-
-                // 定义要发送的数据
-                var data = new { code = settings.DalamudBetaKey };
-
-                // 将数据序列化为 JSON 字符串
-                string jsonData = JsonConvert.SerializeObject(data);
-
-                var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
-
-                var respond = await client.PostAsync(ServerAddress.MainAddress + "/Dalamud/Check/StgCode", content).ConfigureAwait(false);
-
-                if (!respond.IsSuccessStatusCode)
-                {
-                    versionInfoStaging = null;
-                    Log.Error("[GetVersionInfo] BetaKey is not correct.");
-                }
-                else versionInfoStaging.Key = settings.DalamudBetaKey;
-            }
-
-            return (versionInfoRelease, versionInfoStaging);
+                AssemblyVersion = version,
+                SupportedGameVer = "any",
+                RuntimeVersion = runtimeVersion,
+                RuntimeRequired = true,
+                DownloadUrl = $"{ServerAddress.SoilDalamudAddress}/{version}/latest.7z",
+                Hash = onlineHash,
+            };
         }
 
         private async Task UpdateDalamud()
@@ -193,20 +187,9 @@ namespace XIVLauncher.Common.Dalamud
             // GitHub requires TLS 1.2, we need to hardcode this for Windows 7
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
-            var (versionInfoRelease, versionInfoStaging) = await GetVersionInfo(settings).ConfigureAwait(false);
+            var remoteVersionInfo = await GetVersionInfo().ConfigureAwait(false);
 
-            var remoteVersionInfo = versionInfoRelease;
-
-            if (versionInfoStaging?.Key != null && versionInfoStaging.Key == settings.DalamudBetaKey)
-            {
-                remoteVersionInfo = versionInfoStaging;
-                IsStaging = true;
-                Log.Information("[DUPDATE] Using staging version {Kind} with key {Key} ({Hash})", settings.DalamudBetaKind, settings.DalamudBetaKey, remoteVersionInfo.AssemblyVersion);
-            }
-            else
-            {
-                Log.Information("[DUPDATE] Using release version ({Hash})", remoteVersionInfo.AssemblyVersion);
-            }
+            Log.Information("[DUPDATE] Using release version ({Hash})", remoteVersionInfo.AssemblyVersion);
 
             var versionInfoJson = JsonConvert.SerializeObject(remoteVersionInfo);
 
@@ -253,22 +236,7 @@ namespace XIVLauncher.Common.Dalamud
                 if (!this.Runtime.Exists)
                     Directory.CreateDirectory(this.Runtime.FullName);
 
-                var isRuntimeIntegrity = false;
-
-                // Only check runtime hashes if we don't need to update it
-                if (!runtimeNeedsUpdate)
-                {
-                    try
-                    {
-                        isRuntimeIntegrity = await CheckRuntimeHashes(Runtime, localVersion).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error(ex, "[DUPDATE] Could not check runtime integrity.");
-                    }
-                }
-
-                if (runtimePaths.Any(p => !p.Exists) || runtimeNeedsUpdate || !isRuntimeIntegrity)
+                if (runtimePaths.Any(p => !p.Exists) || runtimeNeedsUpdate)
                 {
                     Log.Information("[DUPDATE] Not found, outdated or no integrity: {LocalVer} - {RemoteVer}", localVersion, remoteVersionInfo.RuntimeVersion);
 
@@ -504,38 +472,6 @@ namespace XIVLauncher.Common.Dalamud
             return localVersion;
         }
 
-        private async Task<bool> CheckRuntimeHashes(DirectoryInfo runtimePath, string version)
-        {
-            var hashesFile = new FileInfo(Path.Combine(runtimePath.FullName, $"hashes-{version}.json"));
-            string? runtimeHashes = null;
-
-            if (!hashesFile.Exists)
-            {
-                Log.Verbose("[DUPDATE] Hashes file does not exist, redownloading...");
-
-                try
-                {
-                    using var client = new HttpClient();
-                    client.DefaultRequestHeaders.Add("User-Agent", PlatformHelpers.GetVersion());
-
-                    runtimeHashes = await client.GetStringAsync(ServerAddress.MainAddress + $"/Dalamud/Release/Runtime/Hashes/{version}").ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "[DUPDATE] Could not download hashes for runtime v{Version}", version);
-                    return false;
-                }
-
-                File.WriteAllText(hashesFile.FullName, runtimeHashes);
-            }
-            else
-            {
-                runtimeHashes = File.ReadAllText(hashesFile.FullName);
-            }
-
-            return CheckIntegrity(runtimePath, runtimeHashes,true);
-        }
-
         private async Task DownloadRuntime(DirectoryInfo runtimePath, string version)
         {
             // Ensure directory exists
@@ -581,11 +517,6 @@ namespace XIVLauncher.Common.Dalamud
 
         public async Task DownloadFile(string url, string path, TimeSpan timeout)
         {
-            if (this.forceProxy && url.Contains("/File/Get/"))
-            {
-                url = url.Replace("/File/Get/", "/File/GetProxy/");
-            }
-
             using var downloader = new HttpClientDownloadWithProgress(url, path);
             downloader.ProgressChanged += this.ReportOverlayProgress;
 

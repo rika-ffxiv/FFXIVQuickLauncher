@@ -47,6 +47,7 @@ namespace XIVLauncher.Common.Game
         public Func<Task<string>> RefreshGameSessionByGuidFunc;
         public Func<Task<string>> RefreshDcTravelSessionIdFunc;
         public Func<Task<string>> RefreshGameSessionIdByAutoLoginFunc;
+        public Action<string> SetSdoAreaFunc;
         private bool isInitialized = false;
         public readonly CancellationTokenSource KeepAliveCts;
         public DcTraveler(string nSessionId)
@@ -329,6 +330,10 @@ namespace XIVLauncher.Common.Game
         }
 
         [HttpRpc]
+        public void SetSdoArea(string name) =>
+            SetSdoAreaFunc?.Invoke(name);
+
+        [HttpRpc]
         public async Task<List<Area>> QueryGroupListTravelSource()
         {
             //https://ff14bjz.sdo.com/api/orderserivce/queryGroupListTravelSource?appId=100001900
@@ -454,6 +459,7 @@ namespace XIVLauncher.Common.Game
             }
             return new OrderSatus() { Status = migrationStatus, CheckMessage = checkMessage, MigrationMessage = migrationMessage };
         }
+        [HttpRpc]
         public async Task MigrationConfirmOrder(string orderId, bool confirmed)
         {
             _ = await GetRequestData("api/gmallgateway/migrationConfirmOrder", ApiType.Order, new Dictionary<string, string>() { { "orderId", orderId }, { "confirmType", confirmed ? "1" : "0" } });

@@ -18,7 +18,8 @@ namespace XIVLauncher.Common.Dalamud
 {
     public class AssetManager
     {
-        private const string ASSET_STORE_URL = ServerAddress.MainAddress + "/Dalamud/Asset/Meta";
+        private const string ASSET_VERSION_URL = ServerAddress.SoilDalamudAssetVersionUrl;
+        private const string ASSET_BASE_URL = ServerAddress.SoilDalamudAssetAddress;
 
         internal class AssetInfo
         {
@@ -156,23 +157,26 @@ namespace XIVLauncher.Common.Dalamud
                 catch (Exception ex) {
                     Log.Error(ex, "[DASSET] Could not copy from old asset: {0}",entry.FileName);
                 }
+
+                // Soil 静态分发: 文件位于 {AssetBase}/{version}/files/{fileName}
+                var downloadUrl = $"{ASSET_BASE_URL}/{info.Version}/files/{entry.FileName}";
                 var maxRetryNumber = 5;
                 while (maxRetryNumber > 0)
                 {
                     try
                     {
-                        Log.Information("[DASSET] Downloading {0} to {1}...", entry.Url, entry.FileName);
-                        await updater.DownloadFile(entry.Url, newFilePath, TimeSpan.FromMinutes(4));
+                        Log.Information("[DASSET] Downloading {0} to {1}...", downloadUrl, entry.FileName);
+                        await updater.DownloadFile(downloadUrl, newFilePath, TimeSpan.FromMinutes(4));
                         isRefreshNeeded = true;
                         break;
                     }
                     catch (Exception ex)
                     {
                         Log.Error(ex, "[DASSET] Could not download old asset: {0}", entry.FileName);
-                        if (entry.FileName == "UIRes/NotoSansCJKsc-Medium.otf")
+                        if (entry.FileName == "UIRes/NotoSansCJKsc-Medium.otf" && fontUrls.Count > 0)
                         {
                             maxRetryNumber = fontUrls.Count;
-                            entry.Url = fontUrls.First();
+                            downloadUrl = fontUrls.First();
                             fontUrls.RemoveAt(0);
                         }
                         maxRetryNumber--;
@@ -269,13 +273,19 @@ namespace XIVLauncher.Common.Dalamud
                 Log.Error(ex, "[DASSET] Could not read asset.ver");
             }
 
-            var remoteVer = JsonSerializer.Deserialize<AssetInfo>(await client.GetStringAsync(ASSET_STORE_URL),new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var remoteVerText = await client.GetStringAsync(ASSET_VERSION_URL);
+            var remoteVer = int.Parse(remoteVerText.Trim());
 
-            Log.Verbose("[DASSET] Ver check - local:{0} remote:{1}", localVer, remoteVer.Version);
+            // manifest 内嵌的 Version 字段可能滞后, 以 RELEASE 文本为准
+            var manifestUrl = $"{ASSET_BASE_URL}/{remoteVer}/assetCN.json";
+            var remoteInfo = JsonSerializer.Deserialize<AssetInfo>(await client.GetStringAsync(manifestUrl), new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            remoteInfo.Version = remoteVer;
 
-            var needsUpdate = remoteVer.Version > localVer;
+            Log.Verbose("[DASSET] Ver check - local:{0} remote:{1}", localVer, remoteVer);
 
-            return (needsUpdate, remoteVer);
+            var needsUpdate = remoteVer > localVer;
+
+            return (needsUpdate, remoteInfo);
         }
 
         private static void SetLocalAssetVer(DirectoryInfo baseDir, int version)
