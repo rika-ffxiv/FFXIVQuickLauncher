@@ -1,4 +1,16 @@
-# XIVLauncher [![Actions Status](https://img.shields.io/github/actions/workflow/status/ottercorp/FFXIVQuickLauncher/ci-workflow.yml?branch=CN)](https://github.com/ottercorp/FFXIVQuickLauncher/actions) [![Discord Shield](https://discordapp.com/api/guilds/581875019861328007/widget.png?style=shield)](https://discord.gg/HqvSXkGj) [![Crowdin](https://badges.crowdin.net/ffxivquicklauncher/localized.svg)](https://crowdin.com/project/ffxivquicklauncher) [![GitHub all releases](https://img.shields.io/github/downloads/ottercorp/FFXIVQuickLauncher/total)](https://github.com/ottercorp/FFXIVQuickLauncher/releases/latest) [![GitHub release (latest by date)](https://img.shields.io/github/v/release/ottercorp/FFXIVQuickLauncher)](https://github.com/ottercorp/FFXIVQuickLauncher/releases/latest) <a href="https://github.com/ottercorp/FFXIVQuickLauncher/releases"><img src="https://github.com/ottercorp/FFXIVQuickLauncher/raw/CN/src/XIVLauncher/Resources/logo.png" alt="XL logo" width="100" align="right"/></a>
+# XIVLauncher（macOS 配套分支）
+
+此仓库的 [`mac`](https://github.com/rika-ffxiv/FFXIVQuickLauncher/tree/mac) 分支是 [rika-ffxiv/XIVLauncher.Core](https://github.com/rika-ffxiv/XIVLauncher.Core) 的子模块，不是独立的 macOS 启动器发行版。请通过 XIVLauncher.Core 的 Release 安装和启动。
+
+相对于上游国服 `CN` 分支，`mac` 分支的改动仅服务于 macOS 版 Core：
+
+- Dalamud、其资产和运行时信息改从 Soil 静态分发下载；Dalamud 本体继续执行 MD5 完整性校验。
+- 移除上游的游戏版本门槛与在线可运行性检查，以适配该静态分发的发布节奏。
+- 补齐 DCTraveler 的 `MigrationConfirmOrder` 与 `SetSdoArea` 本地 RPC，供 Core 在游戏启动期提供给兼容插件。
+
+其余代码、原始许可证与免责声明沿用上游。macOS 的 Wine 11、DXMT 和发布说明见 [XIVLauncher.Core 的 README](https://github.com/rika-ffxiv/XIVLauncher.Core#readme)。
+
+# 上游 CN 分支说明
 
 XIVLauncher（简写为 XL）是用于最终幻想14的一个多功能启动器，包含各种可用的附加组件和游戏增强功能。
 
