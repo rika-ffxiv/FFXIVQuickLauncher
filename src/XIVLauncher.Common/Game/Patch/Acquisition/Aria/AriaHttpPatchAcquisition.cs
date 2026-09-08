@@ -45,14 +45,37 @@ namespace XIVLauncher.Common.Game.Patch.Acquisition.Aria
                 var secret = BitConverter.ToString(MD5.Create().ComputeHash(Encoding.UTF8.GetBytes($"{rng.Next()}{rng.Next()}{rng.Next()}{rng.Next()}")));
 
                 var ariaPath = Path.Combine(Paths.ResourcesPath, "aria2c-xl.exe");
+                var ariaPrefixArgs = string.Empty;
 
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
                     ariaPath = "aria2c";
 
-                    if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                     {
-                        ariaPath = "arch -x86_64 aria2c";
+                        const string armAriaPath = "/opt/homebrew/bin/aria2c";
+                        const string intelAriaPath = "/usr/local/bin/aria2c";
+
+                        if (File.Exists(armAriaPath))
+                        {
+                            ariaPath = armAriaPath;
+                        }
+                        else if (File.Exists(intelAriaPath))
+                        {
+                            if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+                            {
+                                ariaPath = "/usr/bin/arch";
+                                ariaPrefixArgs = $"-x86_64 {intelAriaPath} ";
+                            }
+                            else
+                            {
+                                ariaPath = intelAriaPath;
+                            }
+                        }
+                        else
+                        {
+                            throw new FileNotFoundException("aria2c was not found. Install it with Homebrew (`brew install aria2`).");
+                        }
                     }
                 }
 
@@ -62,9 +85,9 @@ namespace XIVLauncher.Common.Game.Patch.Acquisition.Aria
                 var ariaArgs =
                     $"--enable-rpc --rpc-secret={secret} --rpc-listen-port={ariaPort} --log=\"{logFile.FullName}\" --log-level=notice --max-connection-per-server=8 --auto-file-renaming=false --allow-overwrite=true";
 
-                Log.Verbose($"[ARIA] Aria process not there, creating from {ariaPath} {ariaArgs}...");
+                Log.Verbose($"[ARIA] Aria process not there, creating from {ariaPath} {ariaPrefixArgs}{ariaArgs}...");
 
-                var startInfo = new ProcessStartInfo(ariaPath, ariaArgs)
+                var startInfo = new ProcessStartInfo(ariaPath, ariaPrefixArgs + ariaArgs)
                 {
 #if !DEBUG
                     CreateNoWindow = true,
